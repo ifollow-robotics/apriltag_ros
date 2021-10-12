@@ -57,6 +57,13 @@ void ContinuousDetector::onInit ()
   {
     tag_detections_image_publisher_ = it_->advertise("tag_detections_image", 1);
   }
+
+  // Getting rosparams for dynamic detection rate
+  pnh.getParam("slow_period", slow_period_);
+  pnh.getParam("fast_period", fast_period_);
+  pnh.getParam("dynamic_detection_rate", allowing_dynamic_detection_rate_);
+  dynamic_period_ = slow_period_;
+  last_detection_time_ = ros::Time::now();
 }
 
 void ContinuousDetector::imageCallback (
@@ -74,6 +81,16 @@ void ContinuousDetector::imageCallback (
     return;
   }
 
+  // Lazy update : check if enough time has past in between two detections and return otherwise
+  if(allowing_dynamic_detection_rate_ && (ros::Time::now() - last_detection_time_ < ros::Duration(dynamic_period_)))
+  {
+    NODELET_DEBUG_STREAM(ros::this_node::getName() + " no need for detection");
+    return;
+  }
+
+  // Update last_detection time 
+  last_detection_time_ = ros::Time::now();
+
   // Convert ROS's sensor_msgs::Image to cv_bridge::CvImagePtr in order to run
   // AprilTag 2 on the iamge
   try
@@ -87,8 +104,24 @@ void ContinuousDetector::imageCallback (
   }
 
   // Publish detected tags in the image by AprilTag 2
-  tag_detections_publisher_.publish(
-      tag_detector_->detectTags(cv_image_,camera_info));
+  AprilTagDetectionArray detected_tags = tag_detector_->detectTags(cv_image_,camera_info);
+  tag_detections_publisher_.publish(detected_tags);
+  bool no_tags_detected = (detected_tags.detections.size() == 0);
+
+  // Depending on current detection, change current spin rate
+  if (allowing_dynamic_detection_rate_)
+  {
+    if (no_tags_detected && dynamic_period_ != slow_period_)
+    {
+      dynamic_period_ = slow_period_;
+      NODELET_INFO_STREAM(ros::this_node::getName() + " no tag detected, slowing down apriltag_ros spin rate");
+    }
+    else if (!no_tags_detected && dynamic_period_ != fast_period_)
+    {
+      dynamic_period_ = fast_period_;
+      NODELET_INFO_STREAM(ros::this_node::getName() + " tag(s) detected, speeding up apriltag_ros spin rate");
+    }
+  }
 
   // Publish the camera image overlaid by outlines of the detected tags and
   // their payload values

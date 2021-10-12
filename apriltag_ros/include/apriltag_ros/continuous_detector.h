@@ -47,6 +47,7 @@
 
 #include <memory>
 
+#include <ddynamic_reconfigure/ddynamic_reconfigure.h>
 #include <nodelet/nodelet.h>
 
 namespace apriltag_ros
@@ -72,6 +73,12 @@ class ContinuousDetector: public nodelet::Nodelet
   image_transport::CameraSubscriber camera_image_subscriber_;
   image_transport::Publisher tag_detections_image_publisher_;
   ros::Publisher tag_detections_publisher_;
+
+  double slow_period_;
+  double fast_period_;
+  double dynamic_period_;
+  ros::Time last_detection_time_;
+  bool allowing_dynamic_detection_rate_;
 };
 
 } // namespace apriltag_ros
